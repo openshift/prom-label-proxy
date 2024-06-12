@@ -174,7 +174,7 @@ var errModifyResponseFailed = errors.New("failed to process the API response")
 // modifyAPIResponse unwraps the Prometheus API response, passes the enforced
 // label value and the response to the given function and finally replaces the
 // result in the response.
-func modifyAPIResponse(f func([]string, *apiResponse) (interface{}, error)) func(*http.Response) error {
+func modifyAPIResponse(f func([]string, *http.Request, *apiResponse) (interface{}, error)) func(*http.Response) error {
 	return func(resp *http.Response) error {
 		if resp.StatusCode != http.StatusOK {
 			// Pass non-200 responses as-is.
@@ -186,7 +186,7 @@ func modifyAPIResponse(f func([]string, *apiResponse) (interface{}, error)) func
 			return fmt.Errorf("can't decode the response: %w", err)
 		}
 
-		v, err := f(MustLabelValues(resp.Request.Context()), apir)
+		v, err := f(MustLabelValues(resp.Request.Context()), resp.Request, apir)
 		if err != nil {
 			return fmt.Errorf("%w: %w", errModifyResponseFailed, err)
 		}
@@ -209,7 +209,7 @@ func modifyAPIResponse(f func([]string, *apiResponse) (interface{}, error)) func
 	}
 }
 
-func (r *routes) filterRules(lvalues []string, resp *apiResponse) (interface{}, error) {
+func (r *routes) filterRules(lvalues []string, req *http.Request, resp *apiResponse) (interface{}, error) {
 	var rgs rulesData
 	if err := json.Unmarshal(resp.Data, &rgs); err != nil {
 		return nil, fmt.Errorf("can't decode rules data: %w", err)
@@ -220,12 +220,66 @@ func (r *routes) filterRules(lvalues []string, resp *apiResponse) (interface{}, 
 		return nil, err
 	}
 
+	e, err := r.promQLEnforcer(req)
+	if err != nil {
+		return nil, err
+	}
+
 	filtered := []*ruleGroup{}
 	for _, rg := range rgs.RuleGroups {
 		var rules []rule
-		for _, rule := range rg.Rules {
-			if lval := rule.Labels().Get(r.label); lval != "" && m.Matches(lval) {
-				rules = append(rules, rule)
+		for _, rgr := range rg.Rules {
+			if lval := rgr.Labels().Get(r.label); lval != "" && m.Matches(lval) {
+				rules = append(rules, rgr)
+				continue
+			}
+
+			if !r.rulesWithActiveAlerts || rgr.alertingRule == nil {
+				continue
+			}
+
+			var ar *alertingRule
+			for i := range rgr.alertingRule.Alerts {
+				if lval := rgr.alertingRule.Alerts[i].Labels.Get(r.label); lval == "" || !m.Matches(lval) {
+					continue
+				}
+
+				if ar == nil {
+					// TODO(simonpasquier): decide if we should modify the
+					// expression or delegate to the enforcement to the query
+					// endpoint.
+					expr, err := e.Enforce(rgr.alertingRule.Query)
+					if err != nil {
+						return nil, err
+					}
+
+					ar = &alertingRule{
+						Name:        rgr.alertingRule.Name,
+						Query:       expr,
+						Duration:    rgr.alertingRule.Duration,
+						Labels:      rgr.alertingRule.Labels.Copy(),
+						Annotations: rgr.alertingRule.Annotations.Copy(),
+						Health:      rgr.alertingRule.Health,
+						LastError:   rgr.alertingRule.LastError,
+						Type:        rgr.alertingRule.Type,
+					}
+					//TODO(simonpasquier): remove it.
+					ar.Query = rgr.alertingRule.Query
+				}
+
+				ar.Alerts = append(ar.Alerts, rgr.alertingRule.Alerts[i])
+				switch ar.State {
+				case "pending":
+					if rgr.alertingRule.Alerts[i].State == "firing" {
+						ar.State = rgr.alertingRule.Alerts[i].State
+					}
+				case "":
+					ar.State = rgr.alertingRule.Alerts[i].State
+				}
+			}
+
+			if ar != nil {
+				rules = append(rules, rule{alertingRule: ar})
 			}
 		}
 
@@ -238,7 +292,7 @@ func (r *routes) filterRules(lvalues []string, resp *apiResponse) (interface{}, 
 	return &rulesData{RuleGroups: filtered}, nil
 }
 
-func (r *routes) filterAlerts(lvalues []string, resp *apiResponse) (interface{}, error) {
+func (r *routes) filterAlerts(lvalues []string, _ *http.Request, resp *apiResponse) (interface{}, error) {
 	var data alertsData
 	if err := json.Unmarshal(resp.Data, &data); err != nil {
 		return nil, fmt.Errorf("can't decode alerts data: %w", err)
