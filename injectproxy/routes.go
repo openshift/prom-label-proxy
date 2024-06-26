@@ -44,18 +44,20 @@ type routes struct {
 	label    string
 	el       ExtractLabeler
 
-	mux            http.Handler
-	modifiers      map[string]func(*http.Response) error
-	errorOnReplace bool
-	regexMatch     bool
+	mux                   http.Handler
+	modifiers             map[string]func(*http.Response) error
+	errorOnReplace        bool
+	regexMatch            bool
+	rulesWithActiveAlerts bool
 }
 
 type options struct {
-	enableLabelAPIs  bool
-	passthroughPaths []string
-	errorOnReplace   bool
-	registerer       prometheus.Registerer
-	regexMatch       bool
+	enableLabelAPIs       bool
+	passthroughPaths      []string
+	errorOnReplace        bool
+	registerer            prometheus.Registerer
+	regexMatch            bool
+	rulesWithActiveAlerts bool
 }
 
 type Option interface {
@@ -96,6 +98,13 @@ func WithPassthroughPaths(paths []string) Option {
 func WithErrorOnReplace() Option {
 	return optionFunc(func(o *options) {
 		o.errorOnReplace = true
+	})
+}
+
+// WithActiveAlerts causes the proxy to return rules with active alerts.
+func WithActiveAlerts() Option {
+	return optionFunc(func(o *options) {
+		o.rulesWithActiveAlerts = true
 	})
 }
 
@@ -291,12 +300,13 @@ func NewRoutes(upstream *url.URL, label string, extractLabeler ExtractLabeler, o
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
 
 	r := &routes{
-		upstream:       upstream,
-		handler:        proxy,
-		label:          label,
-		el:             extractLabeler,
-		errorOnReplace: opt.errorOnReplace,
-		regexMatch:     opt.regexMatch,
+		upstream:              upstream,
+		handler:               proxy,
+		label:                 label,
+		el:                    extractLabeler,
+		errorOnReplace:        opt.errorOnReplace,
+		regexMatch:            opt.regexMatch,
+		rulesWithActiveAlerts: opt.rulesWithActiveAlerts,
 	}
 	mux := newStrictMux(newInstrumentedMux(http.NewServeMux(), opt.registerer))
 
@@ -469,44 +479,34 @@ func (r *routes) passthrough(w http.ResponseWriter, req *http.Request) {
 	r.handler.ServeHTTP(w, req)
 }
 
-func (r *routes) query(w http.ResponseWriter, req *http.Request) {
+func (r *routes) promQLEnforcer(req *http.Request) (*PromQLEnforcer, error) {
+	values := MustLabelValues(req.Context())
+
 	var matcher *labels.Matcher
-
-	if len(MustLabelValues(req.Context())) > 1 {
-		if r.regexMatch {
-			prometheusAPIError(w, "Only one label value allowed with regex match", http.StatusBadRequest)
-			return
+	if r.regexMatch {
+		if len(values) > 1 {
+			return nil, errors.New("Only one label value allowed with regex match")
 		}
 
-		matcher = &labels.Matcher{
-			Name:  r.label,
-			Type:  labels.MatchRegexp,
-			Value: labelValuesToRegexpString(MustLabelValues(req.Context())),
+		var err error
+		matcher, err = regexMatcher(r.label, values[0])
+		if err != nil {
+			return nil, err
 		}
+
 	} else {
-		matcherType := labels.MatchEqual
-		matcherValue := MustLabelValue(req.Context())
-		if r.regexMatch {
-			compiledRegex, err := regexp.Compile(matcherValue)
-			if err != nil {
-				prometheusAPIError(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			if compiledRegex.MatchString("") {
-				prometheusAPIError(w, "Regex should not match empty string", http.StatusBadRequest)
-				return
-			}
-			matcherType = labels.MatchRegexp
-		}
-
-		matcher = &labels.Matcher{
-			Name:  r.label,
-			Type:  matcherType,
-			Value: matcherValue,
-		}
+		matcher = equalMatcher(r.label, values...)
 	}
 
-	e := NewPromQLEnforcer(r.errorOnReplace, matcher)
+	return NewPromQLEnforcer(r.errorOnReplace, matcher), nil
+}
+
+func (r *routes) query(w http.ResponseWriter, req *http.Request) {
+	e, err := r.promQLEnforcer(req)
+	if err != nil {
+		prometheusAPIError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	// The `query` can come in the URL query string and/or the POST body.
 	// For this reason, we need to try to enforcing in both places.
