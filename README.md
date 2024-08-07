@@ -157,7 +157,7 @@ prom-label-proxy \
 
 > :warning: The above feature is experimental. Be careful when using this option, it may expose sensitive metrics if you use a too permissive expression.
 
-To error out when the query already contains a label matcher that differs from the one the proxy would inject, you can use the `-error-on-replace` option. For example:
+To error out when the query already contains a label matcher that conflicts with the one the proxy would inject, you can use the `-error-on-replace` option. For example:
 
 ```
 prom-label-proxy \
@@ -205,6 +205,17 @@ NOTE: When the `/api/v1/labels` and `/api/v1/label/<name>/values` endpoints were
 ### Rules endpoint
 
 The proxy requests the `/api/v1/rules` Prometheus endpoint, discards the rules that don't contain an exact match of the label(s) and returns the modified response to the client.
+
+To return alerting rules which have active alerts matching the label(s), you can use the `-rules-with-active-alerts` option. For example:
+
+```
+prom-label-proxy \
+   -header-name X-Namespace \
+   -label namespace \
+   -upstream http://demo.do.prometheus.io:9090 \
+   -insecure-listen-address 127.0.0.1:8080 \
+   -rules-with-active-alerts
+```
 
 ### Alerts endpoint
 

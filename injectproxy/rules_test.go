@@ -298,6 +298,83 @@ func validRules() http.Handler {
           }
         ],
         "interval": 10
+      },
+      {
+        "name": "group3",
+        "file": "testdata/rules3.yml",
+        "rules": [
+          {
+            "state": "firing",
+            "name": "Alert3",
+            "query": "metric4{ns!=\"default\"} == 0",
+            "duration": 300,
+            "labels": {},
+            "annotations": {},
+            "alerts": [
+              {
+                "labels": {
+                  "alertname": "Alert3",
+                  "namespace": "ns1"
+                },
+                "annotations": {},
+                "state": "firing",
+                "activeAt": "2019-12-18T13:14:39.972915521+01:00",
+                "value": "0e+00"
+              },
+              {
+                "labels": {
+                  "alertname": "Alert3",
+                  "namespace": "ns3"
+                },
+                "annotations": {},
+                "state": "pending",
+                "activeAt": "2019-12-18T13:20:39.972915521+01:00",
+                "value": "0e+00"
+              }
+            ],
+            "health": "ok",
+            "type": "alerting",
+            "evaluationTime": 0.000214,
+            "lastEvaluation": "2024-04-29T14:23:52.903557247+02:00"
+          },
+          {
+            "state": "firing",
+            "name": "Alert4",
+            "query": "metric5 == 0",
+            "duration": 300,
+            "labels": {},
+            "annotations": {},
+            "alerts": [
+              {
+                "labels": {
+                  "alertname": "Alert4",
+                  "namespace": "ns3",
+                  "state": "foo"
+                },
+                "annotations": {},
+                "state": "pending",
+                "activeAt": "2019-12-18T13:20:39.972915521+01:00",
+                "value": "0e+00"
+              },
+              {
+                "labels": {
+                  "alertname": "Alert1",
+                  "namespace": "ns3",
+                  "state": "bar"
+                },
+                "annotations": {},
+                "state": "firing",
+                "activeAt": "2019-12-18T13:14:39.972915521+01:00",
+                "value": "0e+00"
+              }
+            ],
+            "health": "ok",
+            "type": "alerting",
+            "evaluationTime": 0.000214,
+            "lastEvaluation": "2024-04-29T14:23:52.903557247+02:00"
+          }
+        ],
+        "interval": 10
       }
     ]
   }
@@ -469,8 +546,16 @@ func TestRules(t *testing.T) {
 			upstream: validRules(),
 			opts:     []Option{WithRegexMatch()},
 
-			expCode: http.StatusBadGateway,
+			expCode: http.StatusBadRequest,
 			golden:  "rules_invalid_upstream_response.golden",
+		},
+		{
+			labelv:   []string{"ns3"},
+			upstream: validRules(),
+			opts:     []Option{WithActiveAlerts()},
+
+			expCode: http.StatusOK,
+			golden:  "rules_with_active_alerts.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s=%s", proxyLabel, tc.labelv), func(t *testing.T) {
@@ -513,7 +598,10 @@ func TestRules(t *testing.T) {
 				t.Fatalf("expected status code %d, got %d", tc.expCode, resp.StatusCode)
 			}
 
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("expected no error, got %s", err)
+			}
 			if resp.StatusCode != http.StatusOK {
 				golden.Assert(t, string(body), tc.golden)
 				return
@@ -613,7 +701,7 @@ func TestAlerts(t *testing.T) {
 			upstream: validAlerts(),
 			opts:     []Option{WithRegexMatch()},
 
-			expCode: http.StatusBadGateway,
+			expCode: http.StatusBadRequest,
 			golden:  "alerts_invalid_upstream_response.golden",
 		},
 	} {
@@ -650,7 +738,10 @@ func TestAlerts(t *testing.T) {
 				t.Fatalf("expected status code %d, got %d", tc.expCode, resp.StatusCode)
 			}
 
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("expected no error, got %s", err)
+			}
 			if resp.StatusCode != http.StatusOK {
 				golden.Assert(t, string(body), tc.golden)
 				return
