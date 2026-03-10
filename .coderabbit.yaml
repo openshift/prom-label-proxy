@@ -1,0 +1,5 @@
+inheritance: true
+reviews:
+  enabled: true
+  auto_review:
+    enabled: false
