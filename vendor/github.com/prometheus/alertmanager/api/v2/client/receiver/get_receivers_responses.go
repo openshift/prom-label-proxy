@@ -20,6 +20,8 @@ package receiver
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 
@@ -35,7 +37,7 @@ type GetReceiversReader struct {
 }
 
 // ReadResponse reads a server response into the received o.
-func (o *GetReceiversReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
+func (o *GetReceiversReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (any, error) {
 	switch response.Code() {
 	case 200:
 		result := NewGetReceiversOK()
@@ -93,11 +95,13 @@ func (o *GetReceiversOK) Code() int {
 }
 
 func (o *GetReceiversOK) Error() string {
-	return fmt.Sprintf("[GET /receivers][%d] getReceiversOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /receivers][%d] getReceiversOK %s", 200, payload)
 }
 
 func (o *GetReceiversOK) String() string {
-	return fmt.Sprintf("[GET /receivers][%d] getReceiversOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /receivers][%d] getReceiversOK %s", 200, payload)
 }
 
 func (o *GetReceiversOK) GetPayload() []*models.Receiver {
@@ -107,7 +111,7 @@ func (o *GetReceiversOK) GetPayload() []*models.Receiver {
 func (o *GetReceiversOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && !stderrors.Is(err, io.EOF) {
 		return err
 	}
 

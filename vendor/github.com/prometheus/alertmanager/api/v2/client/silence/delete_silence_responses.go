@@ -20,6 +20,8 @@ package silence
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 
@@ -33,7 +35,7 @@ type DeleteSilenceReader struct {
 }
 
 // ReadResponse reads a server response into the received o.
-func (o *DeleteSilenceReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
+func (o *DeleteSilenceReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (any, error) {
 	switch response.Code() {
 	case 200:
 		result := NewDeleteSilenceOK()
@@ -102,11 +104,11 @@ func (o *DeleteSilenceOK) Code() int {
 }
 
 func (o *DeleteSilenceOK) Error() string {
-	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceOK ", 200)
+	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceOK", 200)
 }
 
 func (o *DeleteSilenceOK) String() string {
-	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceOK ", 200)
+	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceOK", 200)
 }
 
 func (o *DeleteSilenceOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
@@ -158,11 +160,11 @@ func (o *DeleteSilenceNotFound) Code() int {
 }
 
 func (o *DeleteSilenceNotFound) Error() string {
-	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceNotFound ", 404)
+	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceNotFound", 404)
 }
 
 func (o *DeleteSilenceNotFound) String() string {
-	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceNotFound ", 404)
+	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceNotFound", 404)
 }
 
 func (o *DeleteSilenceNotFound) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
@@ -215,11 +217,13 @@ func (o *DeleteSilenceInternalServerError) Code() int {
 }
 
 func (o *DeleteSilenceInternalServerError) Error() string {
-	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceInternalServerError  %+v", 500, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceInternalServerError %s", 500, payload)
 }
 
 func (o *DeleteSilenceInternalServerError) String() string {
-	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceInternalServerError  %+v", 500, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[DELETE /silence/{silenceID}][%d] deleteSilenceInternalServerError %s", 500, payload)
 }
 
 func (o *DeleteSilenceInternalServerError) GetPayload() string {
@@ -229,7 +233,7 @@ func (o *DeleteSilenceInternalServerError) GetPayload() string {
 func (o *DeleteSilenceInternalServerError) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && !stderrors.Is(err, io.EOF) {
 		return err
 	}
 

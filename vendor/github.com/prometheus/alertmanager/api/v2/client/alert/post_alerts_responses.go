@@ -20,6 +20,8 @@ package alert
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 
@@ -33,7 +35,7 @@ type PostAlertsReader struct {
 }
 
 // ReadResponse reads a server response into the received o.
-func (o *PostAlertsReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
+func (o *PostAlertsReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (any, error) {
 	switch response.Code() {
 	case 200:
 		result := NewPostAlertsOK()
@@ -102,11 +104,11 @@ func (o *PostAlertsOK) Code() int {
 }
 
 func (o *PostAlertsOK) Error() string {
-	return fmt.Sprintf("[POST /alerts][%d] postAlertsOK ", 200)
+	return fmt.Sprintf("[POST /alerts][%d] postAlertsOK", 200)
 }
 
 func (o *PostAlertsOK) String() string {
-	return fmt.Sprintf("[POST /alerts][%d] postAlertsOK ", 200)
+	return fmt.Sprintf("[POST /alerts][%d] postAlertsOK", 200)
 }
 
 func (o *PostAlertsOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
@@ -159,11 +161,13 @@ func (o *PostAlertsBadRequest) Code() int {
 }
 
 func (o *PostAlertsBadRequest) Error() string {
-	return fmt.Sprintf("[POST /alerts][%d] postAlertsBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /alerts][%d] postAlertsBadRequest %s", 400, payload)
 }
 
 func (o *PostAlertsBadRequest) String() string {
-	return fmt.Sprintf("[POST /alerts][%d] postAlertsBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /alerts][%d] postAlertsBadRequest %s", 400, payload)
 }
 
 func (o *PostAlertsBadRequest) GetPayload() string {
@@ -173,7 +177,7 @@ func (o *PostAlertsBadRequest) GetPayload() string {
 func (o *PostAlertsBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && !stderrors.Is(err, io.EOF) {
 		return err
 	}
 
@@ -225,11 +229,13 @@ func (o *PostAlertsInternalServerError) Code() int {
 }
 
 func (o *PostAlertsInternalServerError) Error() string {
-	return fmt.Sprintf("[POST /alerts][%d] postAlertsInternalServerError  %+v", 500, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /alerts][%d] postAlertsInternalServerError %s", 500, payload)
 }
 
 func (o *PostAlertsInternalServerError) String() string {
-	return fmt.Sprintf("[POST /alerts][%d] postAlertsInternalServerError  %+v", 500, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /alerts][%d] postAlertsInternalServerError %s", 500, payload)
 }
 
 func (o *PostAlertsInternalServerError) GetPayload() string {
@@ -239,7 +245,7 @@ func (o *PostAlertsInternalServerError) GetPayload() string {
 func (o *PostAlertsInternalServerError) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && !stderrors.Is(err, io.EOF) {
 		return err
 	}
 
