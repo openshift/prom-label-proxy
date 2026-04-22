@@ -1,3 +1,10 @@
+## 0.13.0 / 2026-06-21
+
+* [FEATURE] Add the `-insecure-skip-verify` flag to bypass the TLS verification of the upstream server. #335
+* [FEATURE] Add the `-upstream-ca-cert` flag to provide the Certificate Authority's certificate of the upstream server. #340
+* [FEATURE] Add the `-enable-promql-extended-range-selectors` flag to support extended range selectors in PromQL expressions. #358
+* [FEATURE] Add the `-enable-promql-binop-fill-modifiers` flag to support binary operation fill modifiers in PromQL expressions. #358
+
 ## 0.12.1 / 2025-09-11
 
 * [BUGFIX] Don't panic on `error-on-replace` with multiple values. #300

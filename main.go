@@ -31,7 +31,6 @@ import (
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/prometheus-community/prom-label-proxy/injectproxy"
 )
@@ -59,12 +58,14 @@ func main() {
 		insecureListenAddress           string
 		internalListenAddress           string
 		upstream                        string
+		upstreamCaCert                  string
 		queryParam                      string
 		headerName                      string
 		label                           string
 		labelValues                     arrayFlags
 		enableLabelAPIs                 bool
 		unsafePassthroughPaths          string // Comma-delimited string.
+		insecureSkipVerify              bool
 		errorOnReplace                  bool
 		regexMatch                      bool
 		headerUsesListSyntax            bool
@@ -72,14 +73,17 @@ func main() {
 		labelMatchersForRulesAPI        bool
 		promQLDurationExpressionParsing bool
 		promQLExperimentalFunctions     bool
+		promQLExtendedRangeSelectors    bool
+		promQLBinopFillModifiers        bool
 	)
 
 	flagset := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	flagset.StringVar(&insecureListenAddress, "insecure-listen-address", "", "The address the prom-label-proxy HTTP server should listen on.")
 	flagset.StringVar(&internalListenAddress, "internal-listen-address", "", "The address the internal prom-label-proxy HTTP server should listen on to expose metrics about itself.")
-	flagset.StringVar(&queryParam, "query-param", "", "Name of the HTTP parameter that contains the tenant value.At most one of -query-param, -header-name and -label-value should be given. If the flag isn't defined and neither -header-name nor -label-value is set, it will default to the value of the -label flag.")
+	flagset.StringVar(&queryParam, "query-param", "", "Name of the HTTP parameter that contains the tenant value. At most one of -query-param, -header-name and -label-value should be given. If the flag isn't defined and neither -header-name nor -label-value is set, it will default to the value of the -label flag.")
 	flagset.StringVar(&headerName, "header-name", "", "Name of the HTTP header name that contains the tenant value. At most one of -query-param, -header-name and -label-value should be given.")
 	flagset.StringVar(&upstream, "upstream", "", "The upstream URL to proxy to.")
+	flagset.StringVar(&upstreamCaCert, "upstream-ca-cert", "", "The upstream ca certificate file.")
 	flagset.StringVar(&label, "label", "", "The label name to enforce in all proxied PromQL queries.")
 	flagset.Var(&labelValues, "label-value", "A fixed label value to enforce in all proxied PromQL queries. At most one of -query-param, -header-name and -label-value should be given. It can be repeated in which case the proxy will enforce the union of values.")
 	flagset.BoolVar(&enableLabelAPIs, "enable-label-apis", false, "When specified proxy allows to inject label to label APIs like /api/v1/labels and /api/v1/label/<name>/values. "+
@@ -88,6 +92,7 @@ func main() {
 	flagset.StringVar(&unsafePassthroughPaths, "unsafe-passthrough-paths", "", "Comma delimited allow list of exact HTTP path segments that should be allowed to hit upstream URL without any enforcement. "+
 		"This option is checked after Prometheus APIs, you cannot override enforced API endpoints to be not enforced with this option. Use carefully as it can easily cause a data leak if the provided path is an important "+
 		"API (like /api/v1/configuration) which isn't enforced by prom-label-proxy. NOTE: \"all\" matching paths like \"/\" or \"\" and regex are not allowed.")
+	flagset.BoolVar(&insecureSkipVerify, "insecure-skip-verify", false, "When specified, the proxy will bypass validation of the server's TLS/SSL certificate.")
 	flagset.BoolVar(&errorOnReplace, "error-on-replace", false, "When specified, the proxy will return HTTP status code 400 if the query already contains a label matcher that differs from the one the proxy would inject.")
 	flagset.BoolVar(&regexMatch, "regex-match", false, "When specified, the tenant name is treated as a regular expression. In this case, only one tenant name should be provided.")
 	flagset.BoolVar(&headerUsesListSyntax, "header-uses-list-syntax", false, "When specified, the header line value will be parsed as a comma-separated list. This allows a single tenant header line to specify multiple tenant names.")
@@ -95,6 +100,8 @@ func main() {
 	flagset.BoolVar(&labelMatchersForRulesAPI, "enable-label-matchers-for-rules-api", false, "When true, the proxy uses label matchers when querying the /api/v1/rules endpoint. NOTE: Enable with care because filtering by label matcher is not implemented in older versions of Prometheus (>= 2.54.0 required) and Thanos (>= v0.25.0 required). If not implemented by upstream, the response will not be filtered accordingly.")
 	flagset.BoolVar(&promQLDurationExpressionParsing, "enable-promql-duration-expression-parsing", false, "When true, the proxy supports arithmetic for durations in PromQL expressions.")
 	flagset.BoolVar(&promQLExperimentalFunctions, "enable-promql-experimental-functions", false, "When true, the proxy supports experimental functions in PromQL expressions.")
+	flagset.BoolVar(&promQLExtendedRangeSelectors, "enable-promql-extended-range-selectors", false, "When true, the proxy supports extended range selectors in PromQL expressions.")
+	flagset.BoolVar(&promQLBinopFillModifiers, "enable-promql-binop-fill-modifiers", false, "When true, the proxy supports binary operation fill modifiers in PromQL expressions.")
 
 	//nolint: errcheck // Parse() will exit on error.
 	flagset.Parse(os.Args[1:])
@@ -130,12 +137,20 @@ func main() {
 	)
 
 	opts := []injectproxy.Option{injectproxy.WithPrometheusRegistry(reg)}
+	if upstreamCaCert != "" {
+		opts = append(opts, injectproxy.WithUpstreamCaCert(upstreamCaCert))
+	}
+
 	if enableLabelAPIs {
 		opts = append(opts, injectproxy.WithEnabledLabelsAPI())
 	}
 
 	if len(unsafePassthroughPaths) > 0 {
 		opts = append(opts, injectproxy.WithPassthroughPaths(strings.Split(unsafePassthroughPaths, ",")))
+	}
+
+	if insecureSkipVerify {
+		opts = append(opts, injectproxy.WithInsecureSkipVerify())
 	}
 
 	if errorOnReplace {
@@ -171,6 +186,22 @@ func main() {
 		opts = append(opts, injectproxy.WithRegexMatch())
 	}
 
+	if promQLDurationExpressionParsing {
+		opts = append(opts, injectproxy.WithPromqlDurationExpressionParsing())
+	}
+
+	if promQLExperimentalFunctions {
+		opts = append(opts, injectproxy.WithPromqlExperimentalFunctions())
+	}
+
+	if promQLExtendedRangeSelectors {
+		opts = append(opts, injectproxy.WithPromqlExtendedRangeSelectors())
+	}
+
+	if promQLBinopFillModifiers {
+		opts = append(opts, injectproxy.WithPromqlBinopFillModifiers())
+	}
+
 	var extractLabeler injectproxy.ExtractLabeler
 	switch {
 	case len(labelValues) > 0:
@@ -180,9 +211,6 @@ func main() {
 	case headerName != "":
 		extractLabeler = injectproxy.HTTPHeaderEnforcer{Name: http.CanonicalHeaderKey(headerName), ParseListSyntax: headerUsesListSyntax}
 	}
-
-	parser.ExperimentalDurationExpr = promQLDurationExpressionParsing
-	parser.EnableExperimentalFunctions = promQLExperimentalFunctions
 
 	var g run.Group
 	{
