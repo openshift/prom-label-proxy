@@ -3,7 +3,7 @@ FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.25-openshift-4.22 AS 
 
 WORKDIR /go/src/github.com/openshift/prom-label-proxy
 COPY . .
-RUN if yum install -y prometheus-promu; then export BUILD_PROMU=false; fi && make build
+RUN if yum install -y prometheus-promu; then export BUILD_PROMU=false; fi && DOCKERFILE_VARIANTS=./Dockerfile.ocp make build
 
 FROM registry.ci.openshift.org/ocp/4.22:base-rhel9
 COPY --from=builder /go/src/github.com/openshift/prom-label-proxy/prom-label-proxy /usr/bin/prom-label-proxy
