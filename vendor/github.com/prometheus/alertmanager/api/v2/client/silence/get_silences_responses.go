@@ -20,6 +20,8 @@ package silence
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 
@@ -35,7 +37,7 @@ type GetSilencesReader struct {
 }
 
 // ReadResponse reads a server response into the received o.
-func (o *GetSilencesReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
+func (o *GetSilencesReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (any, error) {
 	switch response.Code() {
 	case 200:
 		result := NewGetSilencesOK()
@@ -105,11 +107,13 @@ func (o *GetSilencesOK) Code() int {
 }
 
 func (o *GetSilencesOK) Error() string {
-	return fmt.Sprintf("[GET /silences][%d] getSilencesOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /silences][%d] getSilencesOK %s", 200, payload)
 }
 
 func (o *GetSilencesOK) String() string {
-	return fmt.Sprintf("[GET /silences][%d] getSilencesOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /silences][%d] getSilencesOK %s", 200, payload)
 }
 
 func (o *GetSilencesOK) GetPayload() models.GettableSilences {
@@ -119,7 +123,7 @@ func (o *GetSilencesOK) GetPayload() models.GettableSilences {
 func (o *GetSilencesOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && !stderrors.Is(err, io.EOF) {
 		return err
 	}
 
@@ -171,11 +175,13 @@ func (o *GetSilencesBadRequest) Code() int {
 }
 
 func (o *GetSilencesBadRequest) Error() string {
-	return fmt.Sprintf("[GET /silences][%d] getSilencesBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /silences][%d] getSilencesBadRequest %s", 400, payload)
 }
 
 func (o *GetSilencesBadRequest) String() string {
-	return fmt.Sprintf("[GET /silences][%d] getSilencesBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /silences][%d] getSilencesBadRequest %s", 400, payload)
 }
 
 func (o *GetSilencesBadRequest) GetPayload() string {
@@ -185,7 +191,7 @@ func (o *GetSilencesBadRequest) GetPayload() string {
 func (o *GetSilencesBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && !stderrors.Is(err, io.EOF) {
 		return err
 	}
 
@@ -237,11 +243,13 @@ func (o *GetSilencesInternalServerError) Code() int {
 }
 
 func (o *GetSilencesInternalServerError) Error() string {
-	return fmt.Sprintf("[GET /silences][%d] getSilencesInternalServerError  %+v", 500, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /silences][%d] getSilencesInternalServerError %s", 500, payload)
 }
 
 func (o *GetSilencesInternalServerError) String() string {
-	return fmt.Sprintf("[GET /silences][%d] getSilencesInternalServerError  %+v", 500, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /silences][%d] getSilencesInternalServerError %s", 500, payload)
 }
 
 func (o *GetSilencesInternalServerError) GetPayload() string {
@@ -251,7 +259,7 @@ func (o *GetSilencesInternalServerError) GetPayload() string {
 func (o *GetSilencesInternalServerError) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && !stderrors.Is(err, io.EOF) {
 		return err
 	}
 

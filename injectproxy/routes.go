@@ -15,6 +15,8 @@ package injectproxy
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -51,18 +54,22 @@ type routes struct {
 	errorOnReplace        bool
 	regexMatch            bool
 	rulesWithActiveAlerts bool
+	parserOpts            parser.Options
 
 	logger *log.Logger
 }
 
 type options struct {
+	upstreamCaCert           string
 	enableLabelAPIs          bool
 	passthroughPaths         []string
+	insecureSkipVerify       bool
 	errorOnReplace           bool
 	registerer               prometheus.Registerer
 	regexMatch               bool
 	rulesWithActiveAlerts    bool
 	labelMatchersForRulesAPI bool
+	parserOptions            parser.Options
 }
 
 type Option interface {
@@ -82,6 +89,13 @@ func WithPrometheusRegistry(reg prometheus.Registerer) Option {
 	})
 }
 
+// WithUpstreamCaCert configures the proxy to use the custom ca certificate for the upstream.
+func WithUpstreamCaCert(caCert string) Option {
+	return optionFunc(func(o *options) {
+		o.upstreamCaCert = caCert
+	})
+}
+
 // WithEnabledLabelsAPI enables proxying to labels API. If false, "501 Not implemented" will be return for those.
 func WithEnabledLabelsAPI() Option {
 	return optionFunc(func(o *options) {
@@ -95,6 +109,13 @@ func WithEnabledLabelsAPI() Option {
 func WithPassthroughPaths(paths []string) Option {
 	return optionFunc(func(o *options) {
 		o.passthroughPaths = paths
+	})
+}
+
+// insecureSkipVerify configures proxy to bypass validation of the server's TLS/SSL certificate.
+func WithInsecureSkipVerify() Option {
+	return optionFunc(func(o *options) {
+		o.insecureSkipVerify = true
 	})
 }
 
@@ -124,6 +145,34 @@ func WithLabelMatchersForRulesAPI() Option {
 func WithRegexMatch() Option {
 	return optionFunc(func(o *options) {
 		o.regexMatch = true
+	})
+}
+
+// WithPromqlDurationExpressionParsing enables parsing of duration expressions in the PromQL parser.
+func WithPromqlDurationExpressionParsing() Option {
+	return optionFunc(func(o *options) {
+		o.parserOptions.ExperimentalDurationExpr = true
+	})
+}
+
+// WithPromqlExperimentalFunctions enables parsing of experimental functions in the PromQL parser.
+func WithPromqlExperimentalFunctions() Option {
+	return optionFunc(func(o *options) {
+		o.parserOptions.EnableExperimentalFunctions = true
+	})
+}
+
+// WithPromqlExtendedRangeSelectors enables extended range selectors in the PromQL parser.
+func WithPromqlExtendedRangeSelectors() Option {
+	return optionFunc(func(o *options) {
+		o.parserOptions.EnableExtendedRangeSelectors = true
+	})
+}
+
+// WithPromqlBinopFillModifiers enables binary operation fill modifiers in the PromQL parser.
+func WithPromqlBinopFillModifiers() Option {
+	return optionFunc(func(o *options) {
+		o.parserOptions.EnableBinopFillModifiers = true
 	})
 }
 
@@ -320,6 +369,7 @@ func NewRoutes(upstream *url.URL, label string, extractLabeler ExtractLabeler, o
 		regexMatch:            opt.regexMatch,
 		rulesWithActiveAlerts: opt.rulesWithActiveAlerts,
 		logger:                log.Default(),
+		parserOpts:            opt.parserOptions,
 	}
 	mux := newStrictMux(newInstrumentedMux(http.NewServeMux(), opt.registerer))
 
@@ -409,6 +459,27 @@ func NewRoutes(upstream *url.URL, label string, extractLabeler ExtractLabeler, o
 		r.modifiers["/api/v1/rules"] = modifyAPIResponse(r.filterRules)
 	}
 
+	// Configure tls for proxy
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{
+		InsecureSkipVerify: opt.insecureSkipVerify,
+	}
+
+	if opt.upstreamCaCert != "" {
+		caCert, err := os.ReadFile(opt.upstreamCaCert)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA certificate: %v", err)
+		}
+
+		caCertPool := x509.NewCertPool()
+		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+			return nil, fmt.Errorf("failed to append CA cert to pool")
+		}
+
+		transport.TLSClientConfig.RootCAs = caCertPool
+	}
+
+	proxy.Transport = transport
 	proxy.ModifyResponse = r.ModifyResponse
 	proxy.ErrorHandler = r.errorHandler
 	proxy.ErrorLog = log.Default()
@@ -515,7 +586,7 @@ func (r *routes) query(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	e := NewPromQLEnforcer(r.errorOnReplace, matcher)
+	e := NewPromQLEnforcerWithOptions(r.errorOnReplace, r.parserOpts, matcher)
 
 	// The `query` can come in the URL query string and/or the POST body.
 	// For this reason, we need to try to enforcing in both places.
@@ -633,7 +704,7 @@ func (r *routes) matcher(w http.ResponseWriter, req *http.Request) {
 	}
 
 	q := req.URL.Query()
-	if err := injectMatcher(q, matcher); err != nil {
+	if err := r.injectMatcher(q, matcher); err != nil {
 		prometheusAPIError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -645,7 +716,7 @@ func (r *routes) matcher(w http.ResponseWriter, req *http.Request) {
 		}
 
 		q = req.PostForm
-		if err := injectMatcher(q, matcher); err != nil {
+		if err := r.injectMatcher(q, matcher); err != nil {
 			return
 		}
 
@@ -659,7 +730,7 @@ func (r *routes) matcher(w http.ResponseWriter, req *http.Request) {
 	r.handler.ServeHTTP(w, req)
 }
 
-func injectMatcher(q url.Values, matcher *labels.Matcher) error {
+func (r *routes) injectMatcher(q url.Values, matcher *labels.Matcher) error {
 	matchers := q[matchersParam]
 	if len(matchers) == 0 {
 		q.Set(matchersParam, matchersToString(matcher))
@@ -667,8 +738,9 @@ func injectMatcher(q url.Values, matcher *labels.Matcher) error {
 	}
 
 	// Inject label into existing matchers.
+	p := parser.NewParser(r.parserOpts)
 	for i, m := range matchers {
-		ms, err := parser.ParseMetricSelector(m)
+		ms, err := p.ParseMetricSelector(m)
 		if err != nil {
 			return err
 		}

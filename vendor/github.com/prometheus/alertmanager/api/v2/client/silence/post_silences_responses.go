@@ -21,6 +21,8 @@ package silence
 
 import (
 	"context"
+	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 
@@ -35,7 +37,7 @@ type PostSilencesReader struct {
 }
 
 // ReadResponse reads a server response into the received o.
-func (o *PostSilencesReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
+func (o *PostSilencesReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (any, error) {
 	switch response.Code() {
 	case 200:
 		result := NewPostSilencesOK()
@@ -105,11 +107,13 @@ func (o *PostSilencesOK) Code() int {
 }
 
 func (o *PostSilencesOK) Error() string {
-	return fmt.Sprintf("[POST /silences][%d] postSilencesOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /silences][%d] postSilencesOK %s", 200, payload)
 }
 
 func (o *PostSilencesOK) String() string {
-	return fmt.Sprintf("[POST /silences][%d] postSilencesOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /silences][%d] postSilencesOK %s", 200, payload)
 }
 
 func (o *PostSilencesOK) GetPayload() *PostSilencesOKBody {
@@ -121,7 +125,7 @@ func (o *PostSilencesOK) readResponse(response runtime.ClientResponse, consumer 
 	o.Payload = new(PostSilencesOKBody)
 
 	// response payload
-	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), o.Payload); err != nil && !stderrors.Is(err, io.EOF) {
 		return err
 	}
 
@@ -173,11 +177,13 @@ func (o *PostSilencesBadRequest) Code() int {
 }
 
 func (o *PostSilencesBadRequest) Error() string {
-	return fmt.Sprintf("[POST /silences][%d] postSilencesBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /silences][%d] postSilencesBadRequest %s", 400, payload)
 }
 
 func (o *PostSilencesBadRequest) String() string {
-	return fmt.Sprintf("[POST /silences][%d] postSilencesBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /silences][%d] postSilencesBadRequest %s", 400, payload)
 }
 
 func (o *PostSilencesBadRequest) GetPayload() string {
@@ -187,7 +193,7 @@ func (o *PostSilencesBadRequest) GetPayload() string {
 func (o *PostSilencesBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && !stderrors.Is(err, io.EOF) {
 		return err
 	}
 
@@ -239,11 +245,13 @@ func (o *PostSilencesNotFound) Code() int {
 }
 
 func (o *PostSilencesNotFound) Error() string {
-	return fmt.Sprintf("[POST /silences][%d] postSilencesNotFound  %+v", 404, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /silences][%d] postSilencesNotFound %s", 404, payload)
 }
 
 func (o *PostSilencesNotFound) String() string {
-	return fmt.Sprintf("[POST /silences][%d] postSilencesNotFound  %+v", 404, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /silences][%d] postSilencesNotFound %s", 404, payload)
 }
 
 func (o *PostSilencesNotFound) GetPayload() string {
@@ -253,7 +261,7 @@ func (o *PostSilencesNotFound) GetPayload() string {
 func (o *PostSilencesNotFound) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && !stderrors.Is(err, io.EOF) {
 		return err
 	}
 
