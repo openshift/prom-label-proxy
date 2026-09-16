@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -30,6 +30,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/efficientgo/core/merrors"
 	"github.com/metalmatze/signal/server/signalhttp"
@@ -55,8 +56,6 @@ type routes struct {
 	regexMatch            bool
 	rulesWithActiveAlerts bool
 	parserOpts            parser.Options
-
-	logger *log.Logger
 }
 
 type options struct {
@@ -73,6 +72,8 @@ type options struct {
 	rulesWithActiveAlerts    bool
 	labelMatchersForRulesAPI bool
 	parserOptions            parser.Options
+	rewriteHostHeader        string
+	httpTimeout              time.Duration
 }
 
 type Option interface {
@@ -193,6 +194,22 @@ func WithPromqlExtendedRangeSelectors() Option {
 func WithPromqlBinopFillModifiers() Option {
 	return optionFunc(func(o *options) {
 		o.parserOptions.EnableBinopFillModifiers = true
+	})
+}
+
+// WithRewriteHostHeader configures the proxy to rewrite the Host header
+// to the given value when proxying requests to the upstream. This is useful
+// when the upstream is behind an ingress that routes based on the Host header.
+func WithRewriteHostHeader(host string) Option {
+	return optionFunc(func(o *options) {
+		o.rewriteHostHeader = host
+	})
+}
+
+// WithHTTPTimeout sets a timeout on proxied HTTP requests. If zero, no timeout is applied.
+func WithHTTPTimeout(d time.Duration) Option {
+	return optionFunc(func(o *options) {
+		o.httpTimeout = d
 	})
 }
 
@@ -378,7 +395,16 @@ func NewRoutes(upstream *url.URL, label string, extractLabeler ExtractLabeler, o
 		opt.registerer = prometheus.NewRegistry()
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(upstream)
+			r.SetXForwarded()
+			r.Out.Host = r.In.Host
+			if opt.rewriteHostHeader != "" {
+				r.Out.Host = opt.rewriteHostHeader
+			}
+		},
+	}
 
 	r := &routes{
 		upstream:              upstream,
@@ -388,7 +414,6 @@ func NewRoutes(upstream *url.URL, label string, extractLabeler ExtractLabeler, o
 		errorOnReplace:        opt.errorOnReplace,
 		regexMatch:            opt.regexMatch,
 		rulesWithActiveAlerts: opt.rulesWithActiveAlerts,
-		logger:                log.Default(),
 		parserOpts:            opt.parserOptions,
 	}
 	mux := newStrictMux(newInstrumentedMux(http.NewServeMux(), opt.registerer))
@@ -472,6 +497,9 @@ func NewRoutes(upstream *url.URL, label string, extractLabeler ExtractLabeler, o
 	}
 
 	r.mux = mux
+	if opt.httpTimeout > 0 {
+		r.mux = http.TimeoutHandler(mux, opt.httpTimeout, "")
+	}
 	r.modifiers = map[string]func(*http.Response) error{
 		"/api/v1/alerts": modifyAPIResponse(r.filterAlerts),
 	}
@@ -516,8 +544,7 @@ func NewRoutes(upstream *url.URL, label string, extractLabeler ExtractLabeler, o
 	proxy.Transport = transport
 	proxy.ModifyResponse = r.ModifyResponse
 	proxy.ErrorHandler = r.errorHandler
-	proxy.ErrorLog = log.Default()
-
+	proxy.ErrorLog = slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)
 	return r, nil
 }
 
@@ -535,8 +562,13 @@ func (r *routes) ModifyResponse(resp *http.Response) error {
 	return m(resp)
 }
 
-func (r *routes) errorHandler(rw http.ResponseWriter, _ *http.Request, err error) {
-	r.logger.Printf("http: proxy error: %v", err)
+func (r *routes) errorHandler(rw http.ResponseWriter, req *http.Request, err error) {
+	slog.Error("HTTP proxy error",
+		"error", err,
+		"path", req.URL.Path,
+		"method", req.Method,
+	)
+
 	if errors.Is(err, errModifyResponseFailed) {
 		rw.WriteHeader(http.StatusBadRequest)
 	}
