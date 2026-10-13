@@ -1,0 +1,22 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: Role
+metadata:
+  name: prom-label-proxy-client
+rules:
+  - apiGroups: ["metrics.k8s.io/v1beta1"]
+    resources: ["pods"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: RoleBinding
+metadata:
+  name: prom-label-proxy-client
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prom-label-proxy-client
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: default
