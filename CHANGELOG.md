@@ -1,3 +1,17 @@
+## 0.16.2 / 2026-11-04
+
+Maintenance release because the CI workflow failed to publish the `v0.16.1` container images.
+
+## 0.16.1 / 2026-11-02
+
+Maintenance release because the CI workflow failed to publish the `v0.16.0` container images.
+
+## 0.16.0 / 2026-10-28
+
+* [FEATURE] Add the `-query-param-only` flag to extract the tenant label from the URL query string only and reject non-empty POST form values for that parameter. Use with authorization proxies that SAR URL query values only (e.g. kube-rbac-proxy `byQueryParameter`). Effective only when `-query-param` is used; otherwise ignored.
+* [ENHANCEMENT] Enforce `match[]` parameters in URL query and POST body independently. #438
+* [ENHANCEMENT] Wrap errors for Alertmanager API endpoints as JSON strings (similar to the upstream Alertmanager API format). #436
+
 ## 0.15.1 / 2026-07-31
 
 * [FEATURE] Add the `-http-timeout` flag. #419

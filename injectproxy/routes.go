@@ -287,9 +287,12 @@ type ExtractLabeler interface {
 	ExtractLabel(next http.HandlerFunc) http.Handler
 }
 
-// HTTPFormEnforcer enforces a label value extracted from the HTTP form and query parameters.
+// HTTPFormEnforcer enforces a label value extracted from the HTTP form and/or query parameters.
 type HTTPFormEnforcer struct {
 	ParameterName string
+	// QueryOnly when true extracts ParameterName only from the URL query parameters. Requests with non-empty
+	// POST form values for that parameter are rejected with HTTP 400.
+	QueryOnly bool
 }
 
 // ExtractLabel implements the ExtractLabeler interface.
@@ -332,7 +335,15 @@ func (hff HTTPFormEnforcer) getLabelValues(r *http.Request) ([]string, error) {
 		return nil, fmt.Errorf("the form data can not be parsed: %w", err)
 	}
 
-	formValues := removeEmptyValues(r.Form[hff.ParameterName])
+	values := r.Form
+	if hff.QueryOnly {
+		if len(removeEmptyValues(r.PostForm[hff.ParameterName])) > 0 {
+			return nil, fmt.Errorf("the %q parameter must not be provided in the POST form body when query-param-only mode is enabled", hff.ParameterName)
+		}
+		values = r.URL.Query()
+	}
+
+	formValues := removeEmptyValues(values[hff.ParameterName])
 	if len(formValues) == 0 {
 		return nil, fmt.Errorf("the %q query parameter must be provided", hff.ParameterName)
 	}
@@ -607,10 +618,10 @@ const keyLabel ctxKey = iota
 func MustLabelValues(ctx context.Context) []string {
 	labels, ok := ctx.Value(keyLabel).([]string)
 	if !ok {
-		panic(fmt.Sprintf("can't find the %q value in the context", keyLabel))
+		panic("can't find the keyLabel value in the context")
 	}
 	if len(labels) == 0 {
-		panic(fmt.Sprintf("empty %q value in the context", keyLabel))
+		panic("empty keyLabel value in the context")
 	}
 
 	sort.Strings(labels)
@@ -769,26 +780,42 @@ func (r *routes) matcher(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// The `match[]` parameters can come in the URL query string and/or in the
+	// POST body. Enforce the label in each place where matchers are present and
+	// only inject a bare matcher when none was provided at all, otherwise the
+	// injected matcher would be sent along with the (enforced) one from the
+	// body and widen the result.
 	q := req.URL.Query()
-	if err := r.injectMatcher(q, matcher); err != nil {
-		prometheusAPIError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	hasURLMatchers := len(q[matchersParam]) > 0
 
-	req.URL.RawQuery = q.Encode()
+	var (
+		bodyQ           url.Values
+		hasBodyMatchers bool
+	)
 	if req.Method == http.MethodPost {
 		if err := req.ParseForm(); err != nil {
 			return
 		}
+		bodyQ = req.PostForm
+		hasBodyMatchers = len(bodyQ[matchersParam]) > 0
+	}
 
-		q = req.PostForm
+	if hasURLMatchers || !hasBodyMatchers {
 		if err := r.injectMatcher(q, matcher); err != nil {
+			prometheusAPIError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		req.URL.RawQuery = q.Encode()
+	}
+
+	if req.Method == http.MethodPost && (hasBodyMatchers || !hasURLMatchers) {
+		if err := r.injectMatcher(bodyQ, matcher); err != nil {
 			return
 		}
 
 		// We are replacing request body, close previous one (ParseForm ensures it is read fully and not nil).
 		_ = req.Body.Close()
-		newBody := q.Encode()
+		newBody := bodyQ.Encode()
 		req.Body = io.NopCloser(strings.NewReader(newBody))
 		req.ContentLength = int64(len(newBody))
 	}
